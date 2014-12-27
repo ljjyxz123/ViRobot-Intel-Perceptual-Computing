@@ -1,0 +1,138 @@
+/*******************************************************************************
+
+INTEL CORPORATION PROPRIETARY INFORMATION
+This software is supplied under the terms of a license agreement or nondisclosure
+agreement with Intel Corporation and may not be copied or disclosed except in
+accordance with the terms of that agreement
+Copyright(c) 2013 Intel Corporation. All Rights Reserved.
+
+*******************************************************************************/
+#include "StdAfx.h"
+#include <Windows.h>
+#include <WindowsX.h>
+#include <commctrl.h>
+#include <vector>
+#include "pxcspeechsynthesis.h"
+#include "pxcsession.h"
+#include "VoiceSynthesisTest.h"
+#include "voice_out.h"
+
+std::wstring Speak(PXCSession *session, const wchar_t* file) {
+	// Fill the module descriptor
+	PXCSession::ImplDesc desc={};
+	
+	int sIdx = 0;
+	char tmpStr[100] = "Voice Synthesis (Nuance* Vocalizer Expressive*)\0";
+/*	for(sIdx = 0; sIdx < 47; sIdx++)
+	{
+		desc.friendlyName[sIdx] = tmpStr[sIdx];
+	}desc.friendlyName[sIdx] = '\0';*/
+	/*std::string str = "Voice Synthesis (Nuance* Vocalizer Expressive*)\0";
+	memcpy(desc.friendlyName, str.c_str(), str.size());*/
+
+	// Create a PXCSpeechSynthesis instance
+	PXCSpeechSynthesis *synth=0;
+	pxcStatus sts;//=session->CreateImpl<PXCSpeechSynthesis>(&desc,&synth);
+	/*if (sts<PXC_STATUS_NO_ERROR)
+		return L"Failed to create the synthesis module";*/
+
+	// Configure the module
+	PXCSpeechSynthesis::ProfileInfo pinfo;
+	sts=synth->QueryProfile(&pinfo);
+
+	//Set options
+	pinfo.volume = 80;
+	pinfo.pitch = 100;
+	pinfo.rate = 100;
+
+	sts=synth->SetProfile(&pinfo);
+	if (sts<PXC_STATUS_NO_ERROR) {
+		synth->Release();
+		return L"Failed to set configuration";
+	}
+
+	// Synthesize the speech
+	pxcCHAR sentence[256]=L"Voice synthesis system start...";//{};
+	if (wcslen(sentence)<=0)
+	{
+		wcscpy_s(sentence,L"String should not be empty");
+	}
+	synth->BuildSentence(1, sentence);
+
+    // Render the sentence or write it to vo's internal memory buffer
+	VoiceOut vo(&pinfo);
+	int nbuffers=synth->QueryBufferNum(1);
+	for (int i=0;i<nbuffers;i++) {
+		PXCAudio *sample=synth->QueryBuffer(1, i);
+
+        if(file)
+        {
+		    vo.WriteAudio(sample);
+        }
+        else
+        {
+            vo.RenderAudio(sample);
+        }
+	}
+
+    if( file )
+    {
+        // The audio has been written to the internal memory buffer.
+        // Now it's time to save it and an appropriate header to a file.
+        vo.SaveFile(file);
+    }
+
+	synth->Release();
+	return std::wstring(L"");
+}
+
+PXCSession  *g_session=0;
+
+void PopulateModules() {
+	PXCSession::ImplDesc desc, desc1;
+	memset(&desc,0,sizeof(desc));
+	desc.cuids[0]=PXCSpeechSynthesis::CUID;
+	int i;
+	for (i=0;;i++) {
+		if (g_session->QueryImpl(&desc,i,&desc1)<PXC_STATUS_NO_ERROR) break;
+	}
+}
+
+void PopulateLanguage() {
+	PXCSession::ImplDesc desc, desc1;
+	memset(&desc,0,sizeof(desc));
+	desc.cuids[0]=PXCSpeechSynthesis::CUID;
+	if (g_session->QueryImpl(&desc, 0 /*ID_MODULE*/,&desc1)>=PXC_STATUS_NO_ERROR) {
+		PXCSpeechSynthesis *vs=0;
+		if (g_session->CreateImpl<PXCSpeechSynthesis>(&desc1,&vs)>=PXC_STATUS_NO_ERROR) {
+			for (int k=0;;k++) {
+				PXCSpeechSynthesis::ProfileInfo pinfo;
+				if (vs->QueryProfile(k,&pinfo)<PXC_STATUS_NO_ERROR) break;
+			}
+			vs->Release();
+		}
+	}
+}
+
+//#pragma warning(disable:4706) /* assignment within conditional */
+int _tmain(int argc, _TCHAR* argv[]){
+	g_session=PXCSession::CreateInstance();
+	if (!g_session) {
+        MessageBoxW(0, L"Failed to create an SDK session", L"Voice Synthesis", MB_ICONEXCLAMATION|MB_OK);
+        return 1;
+    }
+
+	//Initialization
+	PopulateModules();
+	PopulateLanguage();
+
+	//Speak
+	std::wstring Speak(PXCSession *session, const wchar_t* file);
+    std::wstring sts;
+	sts = Speak(g_session, NULL);
+
+	g_session->Release();
+    return 0;
+}
+
+
